@@ -1,14 +1,7 @@
-terraform {
-  required_providers {
-    azurerm = {
-      source  = "hashicorp/azurerm"
-      version = "=4.26.0"
-    }
-  }
-}
 
-#This block enables interaction with the Azure API
-provider "azurerm" { 
-  features {}
+# Create a resource group
+resource "azurerm_resource_group" "resource_group" {
+  location = var.resource_group_location
+  name = "RG-SecurityLab"
 }
 
