@@ -15,12 +15,22 @@ variable "subscription_id" {
   description = "The subscription id for the Azure subscription"  
 }
 
-variable "admin_username" {
+variable "admin_username_W10" {
   type        = string
-  description = "username to the W10 VM"
+  description = "Username for the admin account"
 }
 
-variable "admin_password" {
+variable "admin_password_W10" {
   type        = string
-  description = "password to the W10 VM"
+  description = "Password for the admin account"
+}
+
+variable "admin_username_Kali" {
+  type        = string
+  description = "Username for the admin account"
+}
+
+variable "admin_password_Kali" {
+  type        = string
+  description = "Password for the admin account"
 }
