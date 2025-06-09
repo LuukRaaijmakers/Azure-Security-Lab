@@ -1,1 +1,1 @@
-az vm image terms accept --urn cloud-infrastructure-services:kali-linux-desktop:kali-linux-desktop:latest
+az vm image terms accept --urn kali-linux:kali:kali-2024-4:2024.4.1
