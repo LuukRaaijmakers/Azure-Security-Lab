@@ -84,7 +84,7 @@ resource "azurerm_subnet_network_security_group_association" "nsg_assoc" {
 }
 
 
-#Virtual Machine W10
+# #Virtual Machine W10
 resource "azurerm_network_interface" "NIC-W10VM" {
   name                = "W10VM-nic"
   location            = azurerm_resource_group.RG-SecurityLab.location
@@ -262,8 +262,6 @@ resource "azurerm_linux_virtual_machine" "DockerVM" {
 
 }
 
-
-
 resource "azurerm_container_registry" "ACR" {
   name                = "SecurityLabRegistry"
   resource_group_name = azurerm_resource_group.RG-SecurityLab.name
@@ -272,15 +270,22 @@ resource "azurerm_container_registry" "ACR" {
   admin_enabled       = true
 }
 
+resource "null_resource" "push_image" {
+  depends_on = [azurerm_container_registry.ACR]
 
-resource "azurerm_container_group" "container" {
+  provisioner "local-exec" {
+    command = "bash pushimage.sh"
+  }
+}
+
+resource "azurerm_container_group" "securitylab_container" {
   name                = "SecurityLab-container"
   resource_group_name = azurerm_resource_group.RG-SecurityLab.name
   location            = azurerm_resource_group.RG-SecurityLab.location
   ip_address_type     = "Public"
   dns_name_label      = "aci-label-demo-${random_id.dns.hex}"
   os_type             = "Linux"
-  depends_on          = [null_resource.docker_build_push]
+  depends_on          = [null_resource.push_image]
 
   
   image_registry_credential {
@@ -291,18 +296,17 @@ resource "azurerm_container_group" "container" {
 
   container {
     name   = "hello-world"
-    image  = "mcr.microsoft.com/azuredocs/aci-helloworld"
+    image  = "securitylabregistry.azurecr.io/juice-shop:latest"
     cpu    = "0.5"
     memory = "1.5"
 
     ports {
-      port     = 80
+      port     = 3000
       protocol = "TCP"
     }
   }
 }
 
-# Creates random ID for DNS labels
 resource "random_id" "dns" {
   byte_length = 4
 }
