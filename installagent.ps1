@@ -1,0 +1,1 @@
+$Installer = "$env:TEMP\wazuh-agent.msi"; Invoke-WebRequest -Uri "https://packages.wazuh.com/4.x/windows/wazuh-agent-4.12.0-1.msi" -OutFile $Installer; Start-Process msiexec.exe -ArgumentList "/i `"$Installer`" /quiet WAZUH_MANAGER=10.0.2.30 WAZUH_AGENT_GROUP=default WAZUH_AGENT_NAME=Windows10" -Wait; Start-Service WazuhSvc
