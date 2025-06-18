@@ -58,8 +58,17 @@ variable "admin_password_Docker" {
 
 #========================================Docker-Images========================================#
 
-# variable "container_image" {
-#   type        = string
-#   description = "The image to use for the container."
-#   default     = "bkimminich/juice-shop"
-# }
+variable "container_image" {
+  type        = string
+  description = "The image to use for the container."
+  default     = "bkimminich/juice-shop"
+}
+
+variable "image_name" {
+  default     = "juice-shop"
+}
+
+variable "container_port" {
+  type        = number
+  default     = "3000"
+}

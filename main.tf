@@ -15,13 +15,13 @@ resource "azurerm_public_ip" "win_public_ip" {
 }
 
 
-# resource "azurerm_public_ip" "kali_public_ip" {
-#   name                = "kali-public-ip"
-#   location            = azurerm_resource_group.RG-SecurityLab.location
-#   resource_group_name = azurerm_resource_group.RG-SecurityLab.name
-#   allocation_method   = "Static"
-#   sku                 = "Standard"
-# }
+resource "azurerm_public_ip" "kali_public_ip" {
+  name                = "kali-public-ip"
+  location            = azurerm_resource_group.RG-SecurityLab.location
+  resource_group_name = azurerm_resource_group.RG-SecurityLab.name
+  allocation_method   = "Static"
+  sku                 = "Standard"
+}
 
 resource "azurerm_public_ip" "Docker_public_ip" {
   name                = "Docker-public-ip"
@@ -166,75 +166,74 @@ resource "azurerm_windows_virtual_machine" "W10" {
 
 }
 
-# #Linux VM
+# Kali-Linux
+resource "azurerm_network_interface" "NIC-KaliVM" {
+  name                = "Kali-nic"
+  location            = azurerm_resource_group.RG-SecurityLab.location
+  resource_group_name = azurerm_resource_group.RG-SecurityLab.name
 
-# resource "azurerm_network_interface" "NIC-KaliVM" {
-#   name                = "Kali-nic"
-#   location            = azurerm_resource_group.RG-SecurityLab.location
-#   resource_group_name = azurerm_resource_group.RG-SecurityLab.name
+  ip_configuration {
+    name                          = "internal"
+    subnet_id                     = azurerm_subnet.Subnet-SecurityLab.id
+    private_ip_address_allocation = "Static"
+    private_ip_address            = "10.0.2.20"
+    public_ip_address_id          = azurerm_public_ip.kali_public_ip.id
+  }
+}
 
-#   ip_configuration {
-#     name                          = "internal"
-#     subnet_id                     = azurerm_subnet.Subnet-SecurityLab.id
-#     private_ip_address_allocation = "Static"
-#     private_ip_address            = "10.0.2.20"
-#     public_ip_address_id          = azurerm_public_ip.kali_public_ip.id
-#   }
-# }
+resource "azurerm_linux_virtual_machine" "Kali-Linux" {
+  name                = "Kali-Linux"
+  resource_group_name = azurerm_resource_group.RG-SecurityLab.name
+  location            = azurerm_resource_group.RG-SecurityLab.location
+  size                = "Standard_DS1_v2"
+  admin_username      = var.admin_username_Kali
+  admin_password      = var.admin_password_Kali
+  network_interface_ids = [
+    azurerm_network_interface.NIC-KaliVM.id,
+  ]
 
-# resource "azurerm_linux_virtual_machine" "Kali-Linux" {
-#   name                = "Kali-Linux"
-#   resource_group_name = azurerm_resource_group.RG-SecurityLab.name
-#   location            = azurerm_resource_group.RG-SecurityLab.location
-#   size                = "Standard_DS1_v2"
-#   admin_username      = var.admin_username_Kali
-#   admin_password      = var.admin_password_Kali
-#   network_interface_ids = [
-#     azurerm_network_interface.NIC-KaliVM.id,
-#   ]
+  disable_password_authentication = false
 
-#   disable_password_authentication = false
+  os_disk {
+    caching              = "ReadWrite"
+    storage_account_type = "Standard_LRS"
+  }
 
-#   os_disk {
-#     caching              = "ReadWrite"
-#     storage_account_type = "Standard_LRS"
-#   }
+  source_image_reference {
+    publisher = "kali-linux"
+    offer     = "kali"
+    sku       = "kali-2024-4"
+    version   = "2024.4.1"
+  }
 
-#   source_image_reference {
-#     publisher = "kali-linux"
-#     offer     = "kali"
-#     sku       = "kali-2024-4"
-#     version   = "2024.4.1"
-#   }
+  plan {
+    name      = "kali-2024-4"
+    publisher = "kali-linux"
+    product   = "kali"
+  }
 
-#   plan {
-#     name      = "kali-2024-4"
-#     publisher = "kali-linux"
-#     product   = "kali"
-#   }
+  # installs default kali tools, rdp support and a desktop environment on first boot:
+  custom_data = base64encode(<<-EOT
+    #!/bin/bash
 
-#   # installs default kali tools, rdp support and a desktop environment on first boot:
-#   custom_data = base64encode(<<-EOT
-#     #!/bin/bash
+    # Add new GPG key
+    wget https://archive.kali.org/archive-keyring.gpg -O /usr/share/keyrings/kali-archive-keyring.gpg
 
-#     # Add new GPG key
-#     wget https://archive.kali.org/archive-keyring.gpg -O /usr/share/keyrings/kali-archive-keyring.gpg
+    echo 'libraries/restart-without-asking boolean true' | sudo debconf-set-selections
 
-#     echo 'libraries/restart-without-asking boolean true' | sudo debconf-set-selections
+    apt update 
 
-#     apt update 
+    DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
+    DEBIAN_FRONTEND=noninteractive apt-get install -y kali-linux-default
+    DEBIAN_FRONTEND=noninteractive apt-get install -y kali-desktop-gnome xrdp
+    systemctl set-default graphical.target
+    systemctl enable xrdp
+    systemctl start xrdp
+    reboot
+  EOT
+  )
 
-#     DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
-#     DEBIAN_FRONTEND=noninteractive apt-get install -y kali-linux-default
-#     DEBIAN_FRONTEND=noninteractive apt-get install -y kali-desktop-gnome xrdp
-#     systemctl set-default graphical.target
-#     systemctl enable xrdp
-#     systemctl start xrdp
-#     reboot
-#   EOT
-#   )
-
-# }
+}
 
 
 resource "azurerm_network_interface" "NIC-DockerVM" {
@@ -294,6 +293,13 @@ resource "azurerm_linux_virtual_machine" "DockerVM" {
     #Install git
     DEBIAN_FRONTEND=noninteractive apt install git
 
+    # Get the vulnhub repo
+    su - DockerAdmin -c "git clone --depth 1 https://github.com/vulhub/vulhub ~/vulhub"
+
+    cd /home/DockerAdmin/vulhub/langflow/CVE-2025-3248
+    
+    docker compose up -d
+
     #install Wazuh all-in-one deployment
     curl -sO https://packages.wazuh.com/4.12/wazuh-install.sh && sudo bash ./wazuh-install.sh -a
 
@@ -303,18 +309,12 @@ resource "azurerm_linux_virtual_machine" "DockerVM" {
 
     systemctl restart wazuh-dashboard
 
-    # Get the vulnhub repo
-    su - DockerAdmin -c "git clone --depth 1 https://github.com/vulhub/vulhub ~/vulhub"
-
-    cd /home/DockerAdmin/vulhub/langflow/CVE-2025-3248
-    docker compose up -d
-
   EOT
   )
 }
 
 resource "azurerm_container_registry" "ACR" {
-  name                = "SecurityLabRegistry"
+  name                = "securitylabregistry1"
   resource_group_name = azurerm_resource_group.RG-SecurityLab.name
   location            = azurerm_resource_group.RG-SecurityLab.location
   sku                 = "Standard"
@@ -326,11 +326,15 @@ resource "null_resource" "push_image" {
 
   provisioner "local-exec" {
     command = "bash pushimage.sh"
+    environment = {
+      SOURCE_IMAGE = var.container_image
+      TARGET_IMAGE = var.image_name
+      }
   }
 }
 
-resource "azurerm_container_group" "securitylab_container" {
-  name                = "SecurityLab-container"
+resource "azurerm_container_group" "SecuritylabContainer" {
+  name                = "container"
   resource_group_name = azurerm_resource_group.RG-SecurityLab.name
   location            = azurerm_resource_group.RG-SecurityLab.location
   ip_address_type     = "Public"
@@ -346,13 +350,13 @@ resource "azurerm_container_group" "securitylab_container" {
   }
 
   container {
-    name   = "SecuritylabContainer"
-    image  = "securitylabregistry.azurecr.io/juice-shop:latest"
+    name   = "securitylab-container"
+    image = "securitylabregistry1.azurecr.io/${var.image_name}:latest"
     cpu    = "0.5"
     memory = "1.5"
 
     ports {
-      port     = 3000
+      port     = var.container_port
       protocol = "TCP"
     }
   }
