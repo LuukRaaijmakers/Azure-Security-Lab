@@ -1,367 +1,76 @@
-
-# Create a resource group
-resource "azurerm_resource_group" "RG-SecurityLab" {
-  location = var.resource_group_location
-  name = "RG-SecurityLab"
-}
-
-#Networking
-resource "azurerm_public_ip" "win_public_ip" {
-  name                = "win-public-ip"
-  location            = azurerm_resource_group.RG-SecurityLab.location
-  resource_group_name = azurerm_resource_group.RG-SecurityLab.name
-  allocation_method   = "Static"
-  sku                 = "Standard"
-}
-
-
-resource "azurerm_public_ip" "kali_public_ip" {
-  name                = "kali-public-ip"
-  location            = azurerm_resource_group.RG-SecurityLab.location
-  resource_group_name = azurerm_resource_group.RG-SecurityLab.name
-  allocation_method   = "Static"
-  sku                 = "Standard"
-}
-
-resource "azurerm_public_ip" "Docker_public_ip" {
-  name                = "Docker-public-ip"
-  location            = azurerm_resource_group.RG-SecurityLab.location
-  resource_group_name = azurerm_resource_group.RG-SecurityLab.name
-  allocation_method   = "Static"
-  sku                 = "Standard"
-}
-
-resource "azurerm_virtual_network" "Vnet-SecurityLab" {
-  name                = "Vnet-SecurityLab"
-  address_space       = ["10.0.0.0/16"]
-  location            = azurerm_resource_group.RG-SecurityLab.location
-  resource_group_name = azurerm_resource_group.RG-SecurityLab.name
-}
-
-resource "azurerm_subnet" "Subnet-SecurityLab" {
-  name                 = "internal"
-  resource_group_name  = azurerm_resource_group.RG-SecurityLab.name
-  virtual_network_name = azurerm_virtual_network.Vnet-SecurityLab.name
-  address_prefixes     = ["10.0.2.0/24"]
-}
-
-
-#Security Group
-resource "azurerm_network_security_group" "nsg" {
-  name                = "NSG-SecurityLab"
-  location            = azurerm_resource_group.RG-SecurityLab.location
-  resource_group_name = azurerm_resource_group.RG-SecurityLab.name
-
-  security_rule {
-    name                       = "Allow-RDP"
-    priority                   = 100
-    direction                  = "Inbound"
-    access                     = "Allow"
-    protocol                   = "Tcp"
-    source_port_range          = "*"
-    destination_port_range     = "3389"
-    source_address_prefix      = "*"
-    destination_address_prefix = "*"
-  }
-
-  security_rule {
-    name                       = "Allow-SSH"
-    priority                   = 110
-    direction                  = "Inbound"
-    access                     = "Allow"
-    protocol                   = "Tcp"
-    source_port_range          = "*"
-    destination_port_range     = "22"
-    source_address_prefix      = "*"
-    destination_address_prefix = "*"
-  }
-
-    security_rule {
-    name                       = "Allow-443-inbound"
-    priority                   = 120
-    direction                  = "Inbound"
-    access                     = "Allow"
-    protocol                   = "Tcp"
-    source_port_range          = "*"
-    destination_port_range     = "443"
-    source_address_prefix      = "*"
-    destination_address_prefix = "*"
-  }
-
-    security_rule {
-    name                       = "Outbound-443-outbound"
-    priority                   = 120
-    direction                  = "Outbound"
-    access                     = "Allow"
-    protocol                   = "Tcp"
-    source_port_range          = "*"
-    destination_port_range     = "443"
-    source_address_prefix      = "*"
-    destination_address_prefix = "*"
-  }
-}
-
-# NSG association
-resource "azurerm_subnet_network_security_group_association" "nsg_assoc" {
-  subnet_id                 = azurerm_subnet.Subnet-SecurityLab.id
-  network_security_group_id = azurerm_network_security_group.nsg.id
-}
-
-
-# Virtual Machine W10
-resource "azurerm_network_interface" "NIC-W10VM" {
-  name                = "W10VM-nic"
-  location            = azurerm_resource_group.RG-SecurityLab.location
-  resource_group_name = azurerm_resource_group.RG-SecurityLab.name
-
-  ip_configuration {
-    name                          = "internal"
-    subnet_id                     = azurerm_subnet.Subnet-SecurityLab.id
-    private_ip_address_allocation = "Static"
-    private_ip_address            = "10.0.2.10"
-    public_ip_address_id          = azurerm_public_ip.win_public_ip.id
-  }
-}
-
-resource "azurerm_virtual_machine_extension" "install_wazuh_agent" {
-  name                 = "install-wazuh-agent"
-  virtual_machine_id   = azurerm_windows_virtual_machine.W10.id
-  publisher            = "Microsoft.Compute"
-  type                 = "CustomScriptExtension"
-  type_handler_version = "1.10"
-  depends_on           = [azurerm_windows_virtual_machine.W10]
-
-  settings = jsonencode({
-    "fileUris" = ["https://raw.githubusercontent.com/LuukRaaijmakers/Azure-Security-Lab/refs/heads/main/installagent.ps1"],
-    "commandToExecute" = "powershell -ExecutionPolicy Unrestricted -File installagent.ps1"
-  })
-
-}
-
-resource "azurerm_windows_virtual_machine" "W10" {
-  name                = "VM-W10"
-  resource_group_name = azurerm_resource_group.RG-SecurityLab.name
-  location            = azurerm_resource_group.RG-SecurityLab.location
-  size                = "Standard_D2s_v3"
-  admin_username      = var.admin_username_W10
-  admin_password      = var.admin_password_W10
-  network_interface_ids = [
-    azurerm_network_interface.NIC-W10VM.id,
-  ]
-
-  os_disk {
-    caching              = "ReadWrite"
-    storage_account_type = "Standard_LRS"
-  }
-
-  source_image_reference {
-    publisher = "MicrosoftWindowsDesktop"
-    offer     = "Windows-11"
-    sku       = "win11-24h2-pro"
-    version   = "latest"
-  }
-  
-  # Installs the Azure agent that allows the custom_data to be used in the machine
-  provision_vm_agent = true
-
-}
-
-# Kali-Linux
-resource "azurerm_network_interface" "NIC-KaliVM" {
-  name                = "Kali-nic"
-  location            = azurerm_resource_group.RG-SecurityLab.location
-  resource_group_name = azurerm_resource_group.RG-SecurityLab.name
-
-  ip_configuration {
-    name                          = "internal"
-    subnet_id                     = azurerm_subnet.Subnet-SecurityLab.id
-    private_ip_address_allocation = "Static"
-    private_ip_address            = "10.0.2.20"
-    public_ip_address_id          = azurerm_public_ip.kali_public_ip.id
-  }
-}
-
-resource "azurerm_linux_virtual_machine" "Kali-Linux" {
-  name                = "Kali-Linux"
-  resource_group_name = azurerm_resource_group.RG-SecurityLab.name
-  location            = azurerm_resource_group.RG-SecurityLab.location
-  size                = "Standard_DS1_v2"
-  admin_username      = var.admin_username_Kali
-  admin_password      = var.admin_password_Kali
-  network_interface_ids = [
-    azurerm_network_interface.NIC-KaliVM.id,
-  ]
-
-  disable_password_authentication = false
-
-  os_disk {
-    caching              = "ReadWrite"
-    storage_account_type = "Standard_LRS"
-  }
-
-  source_image_reference {
-    publisher = "kali-linux"
-    offer     = "kali"
-    sku       = "kali-2024-4"
-    version   = "2024.4.1"
-  }
-
-  plan {
-    name      = "kali-2024-4"
-    publisher = "kali-linux"
-    product   = "kali"
-  }
-
-  # installs default kali tools, rdp support and a desktop environment on first boot:
-  custom_data = base64encode(<<-EOT
-    #!/bin/bash
-
-    # Add new GPG key
-    wget https://archive.kali.org/archive-keyring.gpg -O /usr/share/keyrings/kali-archive-keyring.gpg
-
-    echo 'libraries/restart-without-asking boolean true' | sudo debconf-set-selections
-
-    apt update 
-
-    DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
-    DEBIAN_FRONTEND=noninteractive apt-get install -y kali-linux-default
-    DEBIAN_FRONTEND=noninteractive apt-get install -y kali-desktop-gnome xrdp
-    systemctl set-default graphical.target
-    systemctl enable xrdp
-    systemctl start xrdp
-    reboot
-  EOT
-  )
-
-}
-
-
-resource "azurerm_network_interface" "NIC-DockerVM" {
-  name                = "Docker-nic"
-  location            = azurerm_resource_group.RG-SecurityLab.location
-  resource_group_name = azurerm_resource_group.RG-SecurityLab.name
-
-  ip_configuration {
-    name                          = "internal"
-    subnet_id                     = azurerm_subnet.Subnet-SecurityLab.id
-    private_ip_address_allocation = "Static"
-    private_ip_address            = "10.0.2.30"
-    public_ip_address_id          = azurerm_public_ip.Docker_public_ip.id
-  }
-}
-
-resource "azurerm_linux_virtual_machine" "DockerVM" {
-  name                = "Docker"
-  resource_group_name = azurerm_resource_group.RG-SecurityLab.name
-  location            = azurerm_resource_group.RG-SecurityLab.location
-  size                = "Standard_D2s_v3"
-  admin_username      = var.admin_username_Docker
-  admin_password      = var.admin_password_Docker
-  network_interface_ids = [
-    azurerm_network_interface.NIC-DockerVM.id
-  ]
-
-  disable_password_authentication = false
-
-  os_disk {
-    caching              = "ReadWrite"
-    storage_account_type = "Standard_LRS"
-  }
-
-  source_image_reference {
-    publisher = "Canonical"
-    offer     = "0001-com-ubuntu-server-jammy"
-    sku       = "22_04-lts-gen2"
-    version   = "latest"
-  }
-
-  custom_data = base64encode(<<-EOT
-    #!/bin/bash
-    
-    echo 'libraries/restart-without-asking boolean true' | sudo debconf-set-selections
-    
-    apt update 
-    
-    DEBIAN_FRONTEND=noninteractive apt upgrade -y
-
-    # Install the latest version docker
-    curl -s https://get.docker.com/ | sh
-
-    # Run docker service
-    systemctl start docker
-      
-    #Install git
-    DEBIAN_FRONTEND=noninteractive apt install git
-
-    # Get the vulnhub repo
-    su - DockerAdmin -c "git clone --depth 1 https://github.com/vulhub/vulhub ~/vulhub"
-
-    cd /home/DockerAdmin/vulhub/langflow/CVE-2025-3248
-    
-    docker compose up -d
-
-    #install Wazuh all-in-one deployment
-    curl -sO https://packages.wazuh.com/4.12/wazuh-install.sh && sudo bash ./wazuh-install.sh -a
-
-    cd /usr/share/wazuh-indexer/plugins/opensearch-security/tools/
-
-    bash wazuh-passwords-tool.sh -u admin -p Secr3tP4ssw*rd
-
-    systemctl restart wazuh-dashboard
-
-  EOT
-  )
-}
-
-resource "azurerm_container_registry" "ACR" {
-  name                = "securitylabregistry1"
-  resource_group_name = azurerm_resource_group.RG-SecurityLab.name
-  location            = azurerm_resource_group.RG-SecurityLab.location
-  sku                 = "Standard"
-  admin_enabled       = true
-}
-
-resource "null_resource" "push_image" {
-  depends_on = [azurerm_container_registry.ACR]
-
-  provisioner "local-exec" {
-    command = "bash pushimage.sh"
-    environment = {
-      SOURCE_IMAGE = var.container_image
-      TARGET_IMAGE = var.image_name
-      }
-  }
-}
-
-resource "azurerm_container_group" "SecuritylabContainer" {
-  name                = "container"
-  resource_group_name = azurerm_resource_group.RG-SecurityLab.name
-  location            = azurerm_resource_group.RG-SecurityLab.location
-  ip_address_type     = "Public"
-  dns_name_label      = "aci-label-demo-${random_id.dns.hex}"
-  os_type             = "Linux"
-  depends_on          = [null_resource.push_image]
-
-  
-  image_registry_credential {
-    server   = azurerm_container_registry.ACR.login_server
-    username = azurerm_container_registry.ACR.admin_username
-    password = azurerm_container_registry.ACR.admin_password
-  }
-
-  container {
-    name   = "securitylab-container"
-    image = "securitylabregistry1.azurecr.io/${var.image_name}:latest"
-    cpu    = "0.5"
-    memory = "1.5"
-
-    ports {
-      port     = var.container_port
-      protocol = "TCP"
+#========================================Providers========================================#
+terraform {
+  required_providers {
+    azurerm = {
+      source  = "hashicorp/azurerm"
+      version = "~>4.0"
     }
   }
 }
 
-resource "random_id" "dns" {
-  byte_length = 4
+provider "azurerm" { 
+  features {}
+  subscription_id = var.subscription_id 
+}
+
+#========================================Modules========================================#
+
+module "resource_group"{
+  source = "./Misc/Resource Group"
+  resource_group_name         = "RG-SecurityLab"
+  resource_group_location     = "westeurope"    
+}
+
+module "networking" {
+  source = "./Misc/Networking"
+  resource_group_name         = module.resource_group.name
+  resource_group_location     = module.resource_group.location
+}
+
+module "ubuntu_2204_TLS" {
+  source = "./Virtual Machines/Ubuntu 22.04 LTS"
+  resource_group_name         = module.resource_group.name
+  resource_group_location     = module.resource_group.location
+  subnet_id                   = module.networking.subnet_id
+  admin_username_Docker       = var.admin_username_Docker
+  admin_password_Docker       = var.admin_password_Docker
+}
+
+module "Kali_Linux" {
+  source = "./Virtual Machines/Kali-Linux"
+  resource_group_name         = module.resource_group.name
+  resource_group_location     = module.resource_group.location
+  subnet_id                   = module.networking.subnet_id
+  admin_username_Kali         = var.admin_username_Kali
+  admin_password_Kali         = var.admin_password_Kali
+}
+
+module "Windows_10" {
+  source = "./Virtual Machines/Windows 10"
+  resource_group_name         = module.resource_group.name
+  resource_group_location     = module.resource_group.location
+  subnet_id                   = module.networking.subnet_id
+  admin_username_W10          = var.admin_username_W10
+  admin_password_W10          = var.admin_password_W10
+}
+
+module "Azure_Container_Registry" {
+  source = "./Containers/Azure Container Registry"
+  resource_group_name         = module.resource_group.name
+  resource_group_location     = module.resource_group.location
+  image_name                  = var.image_name
+  container_image             = var.container_image
+}
+
+module "Azure_Container_Instance" {
+  source = "./Containers/Azure Container Instance"
+  resource_group_name         = module.resource_group.name
+  resource_group_location     = module.resource_group.location
+  image_name                  = var.image_name
+  container_port              = var.container_port
+
+  ACR_login_server            = module.Azure_Container_Registry.container_registry_login_server
+  ACR_username                = module.Azure_Container_Registry.container_registry_username
+  ACR_password                = module.Azure_Container_Registry.container_registry_password
+  acr_push_depends_on         = module.Azure_Container_Registry.push_image
 }
